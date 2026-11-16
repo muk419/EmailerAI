@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Emailer AI</title>
+<style>
+  :root{
+    --bg:#0f1713; --panel:#16211b; --panel2:#1d2b23; --line:#2b3d32;
+    --ink:#e8f0ea; --muted:#9db3a6; --accent:#5cc25a; --accent2:#b8d26a;
+    --danger:#e2635a; --chip:#223129;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:14px; line-height:1.5;
+  }
+  .app{display:flex;flex-direction:column;height:100vh}
+  .topbar{
+    display:flex;align-items:center;gap:12px;padding:10px 16px;
+    background:linear-gradient(90deg,#102017,#16271d);border-bottom:1px solid var(--line);
+  }
+  .logo{width:26px;height:26px;border-radius:7px;background:radial-gradient(circle at 30% 30%,var(--accent),#2f7a2e);flex:0 0 auto}
+  .topbar h1{font-size:16px;margin:0;font-weight:700;letter-spacing:.2px}
+  .topbar .tag{font-size:11px;color:var(--muted);background:var(--chip);padding:3px 8px;border-radius:999px}
+  .spacer{flex:1}
+  .btn{
+    border:1px solid var(--line);background:var(--panel2);color:var(--ink);
+    padding:8px 14px;border-radius:9px;cursor:pointer;font-size:13px;font-weight:600;
+    transition:.15s;white-space:nowrap;
+  }
+  .btn:hover{border-color:var(--accent);background:#243a2d}
+  .btn.primary{background:var(--accent);color:#0c160f;border-color:var(--accent)}
+  .btn.primary:hover{background:#6fd36c}
+  .btn.ghost{background:transparent}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+
+  .main{display:flex;flex:1;min-height:0}
+  .left{width:46%;min-width:300px;max-width:75%;display:flex;flex-direction:column;background:var(--panel)}
+  .right{flex:1;display:flex;flex-direction:column;min-width:0;background:#0b120e}
+  .divider{width:7px;cursor:col-resize;background:var(--line);flex:0 0 auto;position:relative}
+  .divider:hover,.divider.drag{background:var(--accent)}
+  .divider::after{content:"⋮";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:var(--bg);font-size:12px}
+
+  .tabs{display:flex;gap:4px;padding:10px 12px 0}
+  .tab{padding:8px 14px;border-radius:9px 9px 0 0;cursor:pointer;color:var(--muted);font-weight:600;font-size:13px;border:1px solid transparent;border-bottom:none}
+  .tab.active{color:var(--ink);background:var(--panel2);border-color:var(--line)}
+  .pane{flex:1;min-height:0;display:none;flex-direction:column;padding:12px}
+  .pane.active{display:flex}
+
+  label.fld{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px;font-weight:600}
+  textarea,input[type=text]{
+    width:100%;background:#0c130f;border:1px solid var(--line);color:var(--ink);
+    border-radius:9px;padding:10px;font-size:13px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;resize:vertical;
+  }
+  textarea:focus,input:focus{outline:none;border-color:var(--accent)}
+  #rawInput{flex:1;min-height:160px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .row{display:flex;gap:8px;margin-top:10px}
+  .hint{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5}
+  .hint code{background:var(--chip);padding:1px 5px;border-radius:5px;color:var(--accent2)}
+
+  /* chat */
+  .chatlog{flex:1;overflow:auto;display:flex;flex-direction:column;gap:10px;padding:6px 2px}
+  .msg{max-width:88%;padding:9px 12px;border-radius:12px;font-size:13px;white-space:pre-wrap;word-break:break-word}
+  .msg.user{align-self:flex-end;background:var(--accent);color:#0c160f;border-bottom-right-radius:3px}
+  .msg.bot{align-self:flex-start;background:var(--panel2);border:1px solid var(--line);border-bottom-left-radius:3px}
+  .msg.sys{align-self:center;font-size:11px;color:var(--muted);background:transparent}
+  .chatbar{display:flex;gap:8px;margin-top:10px}
+  .chatbar input{flex:1;font-family:inherit}
+  .apikey{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+  .apikey input{flex:1;font-family:inherit;font-size:12px;padding:7px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--danger);flex:0 0 auto}
+  .dot.on{background:var(--accent)}
+
+  /* preview */
+  .prevbar{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+  .prevbar .ttl{font-weight:700}
+  .seg{display:flex;background:#0c130f;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  .seg button{background:transparent;border:none;color:var(--muted);padding:6px 12px;cursor:pointer;font-size:12px;font-weight:600}
+  .seg button.active{background:var(--panel2);color:var(--ink)}
+  .prevwrap{flex:1;overflow:auto;display:flex;justify-content:center;padding:20px;background:#070c09}
+  #preview{background:#fff;border:none;width:640px;max-width:100%;min-height:600px;border-radius:6px;box-shadow:0 10px 40px rgba(0,0,0,.5)}
+  #codeView{display:none;flex:1;width:100%;background:#0c130f;color:#cfe7d4;border:none;padding:16px;font-family:ui-monospace,Menlo,monospace;font-size:12px;line-height:1.55}
+  .empty{color:var(--muted);text-align:center;margin:auto;max-width:360px}
+
+  /* image slots */
+  .slots{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+  .slot{border:1px solid var(--line);border-radius:9px;padding:8px;background:#0c130f;display:flex;flex-direction:column;gap:6px}
+  .slot.drag{border-color:var(--accent);background:#1a2a20}
+  .slot .nm{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.4px}
+  .slot .thumb{height:52px;border-radius:6px;background:#060b08 center/contain no-repeat;border:1px dashed var(--line);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--muted)}
+  .slot .acts{display:flex;gap:6px}
+  .slot .mini{flex:1;font-size:11px;padding:5px;border-radius:7px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);cursor:pointer;text-align:center}
+  .slot .mini:hover{border-color:var(--accent)}
+  .refbox{margin-top:8px;border:1px dashed var(--line);border-radius:9px;padding:8px;display:flex;align-items:center;gap:8px}
+  .refbox.has{border-color:var(--accent)}
+  .refbox img{height:40px;border-radius:5px}
+  .refbox .mini{font-size:11px;padding:5px 9px;border-radius:7px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);cursor:pointer}
+
+  /* layout indicator */
+  .layout{border:1px solid var(--line);border-radius:9px;overflow:hidden;margin-top:8px}
+  .layout .lrow{padding:7px 10px;font-size:11px;font-weight:600;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line)}
+  .layout .lrow:last-child{border-bottom:none}
+  .layout .lrow.img{background:#1a2a20;color:var(--accent2)}
+  .layout .lrow.txt{background:#121c16;color:var(--muted)}
+  .layout .pin{font-size:9px;background:var(--chip);color:var(--accent);padding:1px 6px;border-radius:999px;text-transform:uppercase;letter-spacing:.5px}
+  @media(max-width:860px){.main{flex-direction:column}.left{width:100%;max-width:none;min-width:0;height:48%;border-right:none;border-bottom:1px solid var(--line)}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="logo"></div>
+    <h1>Emailer AI</h1>
+    <span class="tag">paste → generate → chat → download</span>
+    <div class="spacer"></div>
+    <button class="btn ghost" id="uploadFileBtn">📁 Upload brief / image</button>
+    <button class="btn" id="copyBtn">Copy HTML</button>
+    <button class="btn primary" id="downloadBtn">Download .html</button>
+  </div>
+
+  <div class="main">
+    <!-- LEFT -->
+    <div class="left">
+      <div class="tabs">
+        <div class="tab active" data-tab="input">1 · Paste content</div>
+        <div class="tab" data-tab="chat">2 · Chat edits</div>
+      </div>
+
+      <!-- INPUT PANE -->
+      <div class="pane active" data-pane="input">
+        <label class="fld">Paste your emailer brief (image links + content)</label>
+        <textarea id="rawInput" placeholder="Paste the brief here — image AWS links, register/website/linkedin links, then the Content block. Then click Generate."></textarea>
+        <div class="row">
+          <button class="btn primary" id="generateBtn" style="flex:1">⚡ Generate email</button>
+          <button class="btn" id="clearBtn">Clear</button>
+        </div>
+        <div class="hint">
+          Recognised lines: <code>Header:</code> <code>Event details:</code> <code>Button:</code> <code>Footer:</code> (image URLs),
+          a <code>forms.gle</code>/register link for the button, website + linkedin links, and everything under <code>Content:</code>.
+          Bullets are detected as <code>Label: description</code> lines. Date/time/platform live inside the Event-details image, so change those by swapping that image.
+        </div>
+
+        <label class="fld" style="margin-top:14px">How your emailer is built (top → bottom)</label>
+        <div class="layout">
+          <div class="lrow img"><span class="pin">img</span> Header image</div>
+          <div class="lrow txt">Greeting + intro + bullet points &nbsp;<em>(text)</em></div>
+          <div class="lrow img"><span class="pin">img</span> Event-details image &nbsp;<em>(date · time · platform)</em></div>
+          <div class="lrow txt">Closing lines + sign-off &nbsp;<em>(text)</em></div>
+          <div class="lrow img"><span class="pin">img</span> Button image &nbsp;→ links to register</div>
+          <div class="lrow img"><span class="pin">img</span> Footer image + website / LinkedIn links</div>
+        </div>
+      </div>
+
+      <!-- CHAT PANE -->
+      <div class="pane" data-pane="chat">
+        <div class="apikey">
+          <span class="dot" id="keyDot" title="API key status"></span>
+          <input type="password" id="apiKey" placeholder="Optional: paste Anthropic API key (sk-ant-…) for free-form edits">
+          <button class="btn" id="saveKey">Save</button>
+        </div>
+        <div class="chatlog" id="chatlog"></div>
+        <div class="chatbar">
+          <input type="text" id="chatInput" placeholder="e.g. change the register link to https://… / replace 'Name' with 'Priya' / make the button 260px">
+          <button class="btn primary" id="sendChat">Send</button>
+        </div>
+        <div class="hint">Works offline for common edits (links, images, text replace, colours, widths). With an API key, type any instruction in plain English.</div>
+      </div>
+    </div>
+
+    <div class="divider" id="divider" title="Drag to resize"></div>
+
+    <!-- RIGHT -->
+    <div class="right">
+      <div class="prevbar">
+        <span class="ttl">Preview</span>
+        <div class="seg">
+          <button id="segPreview" class="active">👁 Rendered</button>
+          <button id="segCode">&lt;/&gt; HTML</button>
+        </div>
+        <div class="spacer"></div>
+        <span class="hint" id="statusLine" style="margin:0"></span>
+      </div>
+      <div class="prevwrap" id="prevwrap">
+        <iframe id="preview" title="email preview"></iframe>
+        <textarea id="codeView" spellcheck="false" readonly></textarea>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   Emailer AI — single-file tool
+   ============================================================ */
+const $ = s => document.querySelector(s);
+const el = (id) => document.getElementById(id);
+
+const SAMPLE = `Images AWS Link:
+Header: https://staticcontent.s3.ap-south-1.amazonaws.com/IHRC+-+Virtual+meet+-+Header.jpg
+Event details: https://staticcontent.s3.ap-south-1.amazonaws.com/IHRC+E2+-+Virtual+meet+-+Event+details.jpg
+Button: https://staticcontent.s3.ap-south-1.amazonaws.com/IHRC+-+Virtual+meet+-+Button.jpg
+Link: https://forms.gle/9yVQ262ZrHKMps1CA
+Footer: https://staticcontent.s3.ap-south-1.amazonaws.com/IHRC++E2+-+Virtual+meet+-+Footer+bar.jpg
+Link: 1. https://indiahrcommunity.com     2. www.linkedin.com/company/india-hr-community
+
+Content:
+
+Hi Name,
+
+Financial planning becomes increasingly important as you move into leadership roles. But are you giving your own financial future the attention it deserves?
+
+Join us for our upcoming India HR Community webinar, Financial Planning for People Leaders, where we'll explore this in detail.
+
+Here's what we'll explore:
+Financial Decisions That Come with Leadership: Understanding the financial considerations and decisions that accompany senior roles and leadership positions.
+Building a Strong Financial Foundation: Understanding the importance of structured financial planning and making informed decisions for the future.
+Planning Your Own Financial Future: Moving beyond professional responsibilities to think about your personal financial goals and make informed financial decisions.
+Whether it's supporting your team's financial wellbeing or taking a more considered approach to your own financial future, this conversation brings both perspectives together.
+
+We look forward to having you join us.
+
+Warm regards,
+India HR Community`;
+
+/* ---------- state ---------- */
+let state = null;          // structured model
+let customHTML = null;     // when an AI edit returns raw html, we hold it here
+let chatHistory = [];      // {role, content}
+
+function emptyState(){
+  return {
+    images:{header:'',event:'',button:'',footer:''},
+    links:{register:'',website:'',linkedin:''},
+    greeting:'Hi Name,', intro:[], bulletsHeading:'', bullets:[], closing:[],
+    signoff:'Warm regards,', signature:'India HR Community',
+    style:{ width:600, buttonWidth:300, bg:'#f5f3e7', text:'#1c2b22', font:"Arial, Helvetica, sans-serif", bulletColor:'#5cc25a' }
+  };
+}
+
+/* ---------- URL helpers ---------- */
+const URL_RE = /(https?:\/\/[^\s)]+)|(www\.[^\s)]+)/ig;
+function fixUrl(u){ if(!u) return u; u=u.trim().replace(/[.,]+$/,''); if(/^www\./i.test(u)) u='https://'+u; return u; }
+
+/* ---------- parser ---------- */
+function parseInput(text){
+  const s = emptyState();
+
+  // split content vs header section
+  const ci = text.search(/^\s*content\s*:/im);
+  const head = ci>=0 ? text.slice(0,ci) : text;
+  const body = ci>=0 ? text.slice(ci).replace(/^\s*content\s*:/i,'') : '';
+
+  // ---- images & links from head section ----
+  head.split(/\r?\n/).forEach(line=>{
+    const urls = (line.match(URL_RE)||[]).map(fixUrl);
+    const low = line.toLowerCase();
+    if(/header/.test(low) && urls[0]) s.images.header=urls[0];
+    else if(/event\s*detail/.test(low) && urls[0]) s.images.event=urls[0];
+    else if(/button/.test(low) && urls[0]) s.images.button=urls[0];
+    else if(/footer/.test(low) && urls[0]) s.images.footer=urls[0];
+    else if(urls.length){
+      urls.forEach(u=>{
+        if(/forms\.gle|register|rsvp|docs\.google|typeform|lu\.ma|zoom|meet\.google/i.test(u) && !s.links.register) s.links.register=u;
+        else if(/linkedin/i.test(u)) s.links.linkedin=u;
+        else if(!s.links.website) s.links.website=u;
+        else if(!s.links.register) s.links.register=u;
+      });
+    }
+  });
+  // fallbacks
+  if(!s.links.register && s.links.website && /forms|register/i.test(head)) {}
+
+  // ---- content ----
+  const lines = body.split(/\r?\n/).map(l=>l.trim());
+  let phase='intro';
+  for(let i=0;i<lines.length;i++){
+    const l=lines[i];
+    if(!l) continue;
+    if(/^hi\b|^hello\b|^dear\b/i.test(l) && s.greeting==='Hi Name,' && phase==='intro' && s.intro.length===0){ s.greeting=l; continue; }
+    if(/here'?s what|what we'?ll explore|agenda|in this (session|webinar)|you'?ll learn/i.test(l)){ s.bulletsHeading=l; phase='bullets'; continue; }
+    if(/^warm regards|^best regards|^regards|^thanks|^cheers|^sincerely/i.test(l)){ s.signoff=l; phase='sign'; continue; }
+
+    if(phase==='sign'){ s.signature = l; continue; }
+
+    // bullet detection: "Label: text" with a short-ish label
+    const m = l.match(/^([^:]{3,70}):\s+(.*\S.*)$/);
+    const looksBullet = m && m[1].split(/\s+/).length<=10 && /[A-Za-z]/.test(m[1]) && !/https?:/.test(m[1]);
+    if(phase==='bullets' && looksBullet){ s.bullets.push({label:m[1].trim(), text:m[2].trim()}); continue; }
+
+    // once bullets started and we hit a normal sentence, it's closing text
+    if(phase==='bullets' && !looksBullet){ phase='closing'; s.closing.push(l); continue; }
+    if(phase==='closing'){ s.closing.push(l); continue; }
+    s.intro.push(l);
+  }
+  return s;
+}
+
+/* ---------- email html renderer ---------- */
+function esc(t){return (t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function renderEmail(s){
+  const st=s.style;
+  const P=`margin:0 0 16px;font-size:16px;line-height:1.6;color:${st.text};font-family:${st.font};`;
+  const img=(src,alt)=> src?`<img src="${src}" alt="${esc(alt)}" width="${st.width}" style="display:block;width:100%;max-width:${st.width}px;height:auto;border:0;" />`
+                            :`<div style="padding:24px;text-align:center;color:#b00;background:#fde8e6;font-family:${st.font};font-size:13px;">⚠ Missing ${esc(alt)} image URL</div>`;
+
+  const intro = s.intro.map(p=>`<p style="${P}">${esc(p)}</p>`).join('');
+  const closing = s.closing.map(p=>`<p style="${P}">${esc(p)}</p>`).join('');
+  const bulletsHead = s.bulletsHeading?`<p style="${P}font-weight:bold;">${esc(s.bulletsHeading)}</p>`:'';
+  const bullets = s.bullets.length?('<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 18px;width:100%;">'+
+    s.bullets.map(b=>`<tr>
+      <td valign="top" style="padding:0 10px 14px 0;"><div style="width:8px;height:8px;background:${st.bulletColor};margin-top:7px;"></div></td>
+      <td valign="top" style="padding:0 0 14px;font-size:16px;line-height:1.6;color:${st.text};font-family:${st.font};"><strong>${esc(b.label)}:</strong> ${esc(b.text)}</td>
+    </tr>`).join('')+'</table>'):'';
+
+  const regLink = s.links.register||'#';
+  const button = s.images.button?
+    `<a href="${regLink}" target="_blank" style="display:inline-block;text-decoration:none;">
+       <img src="${s.images.button}" alt="Register now" width="${st.buttonWidth}" style="display:block;width:${st.buttonWidth}px;max-width:100%;height:auto;border:0;" />
+     </a>`:
+    `<a href="${regLink}" target="_blank" style="display:inline-block;background:${st.bulletColor};color:#0c160f;font-weight:bold;padding:14px 34px;border-radius:6px;text-decoration:none;font-family:${st.font};">REGISTER NOW</a>`;
+
+  // footer: image + real clickable links row beneath so website/linkedin work in every client
+  const fl=[];
+  if(s.links.website) fl.push(`<a href="${s.links.website}" target="_blank" style="color:#cfe3c7;text-decoration:none;font-family:${st.font};font-size:12px;">${esc(s.links.website.replace(/^https?:\/\//,''))}</a>`);
+  if(s.links.linkedin) fl.push(`<a href="${s.links.linkedin}" target="_blank" style="color:#cfe3c7;text-decoration:none;font-family:${st.font};font-size:12px;">LinkedIn</a>`);
+  const footerLinks = fl.length?`<tr><td style="background:#0f2417;text-align:center;padding:10px 12px;">${fl.join('&nbsp;&nbsp;·&nbsp;&nbsp;')}</td></tr>`:'';
+
+  return `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="X-UA-Compatible" content="IE=edge"><title>Email</title></head>
+<body style="margin:0;padding:0;background:#e9ece6;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#e9ece6;"><tr><td align="center" style="padding:16px;">
+  <table role="presentation" width="${st.width}" cellpadding="0" cellspacing="0" style="width:${st.width}px;max-width:100%;background:${st.bg};border-radius:4px;overflow:hidden;">
+    <tr><td>${img(s.images.header,'Header')}</td></tr>
+    <tr><td style="padding:28px 34px 4px;">
+      <p style="${P}">${esc(s.greeting)}</p>
+      ${intro}
+      ${bulletsHead}
+      ${bullets}
+    </td></tr>
+    <tr><td style="padding:8px 24px 18px;">${img(s.images.event,'Event details')}</td></tr>
+    <tr><td style="padding:4px 34px 8px;">${closing}
+      <p style="${P}font-weight:bold;">${esc(s.signoff)}</p>
+    </td></tr>
+    <tr><td align="left" style="padding:4px 34px 28px;">${button}</td></tr>
+    <tr><td align="left" style="padding:0 34px 24px;">
+      <p style="margin:0;font-size:15px;color:${st.text};font-family:${st.font};">${esc(s.signoff)}<br><strong>${esc(s.signature)}</strong></p>
+    </td></tr>
+    <tr><td>${img(s.images.footer,'Footer')}</td></tr>
+    ${footerLinks}
+  </table>
+</td></tr></table>
+</body></html>`;
+}
+
+/* ---------- output ---------- */
+function currentHTML(){ return customHTML!=null ? customHTML : (state?renderEmail(state):''); }
+function refresh(status){
+  const html=currentHTML();
+  el('preview').srcdoc = html || '<div style="font-family:sans-serif;color:#888;padding:40px;text-align:center">Paste a brief and click Generate →</div>';
+  el('codeView').value = html;
+  if(status) setStatus(status);
+  el('downloadBtn').disabled = !html;
+  el('copyBtn').disabled = !html;
+}
+let statusT;
+function setStatus(t){ el('statusLine').textContent=t; clearTimeout(statusT); statusT=setTimeout(()=>el('statusLine').textContent='',4000); }
+
+/* ============================================================
+   CHAT — rule based + optional Claude API
+   ============================================================ */
+function addMsg(role,text){
+  const d=document.createElement('div'); d.className='msg '+role; d.textContent=text;
+  el('chatlog').appendChild(d); el('chatlog').scrollTop=el('chatlog').scrollHeight;
+}
+
+function applyRule(cmd){
+  const c=cmd.trim(); const low=c.toLowerCase();
+  // ensure structured mode for structured edits
+  const needStruct = ()=>{ if(customHTML!=null){return false;} return true; };
+
+  // --- swap images ---
+  let m;
+  const imgMap=[['header','header'],['event','event'],['button','button'],['footer','footer']];
+  for(const [kw,key] of imgMap){
+    const re=new RegExp(`(?:change|replace|set|update|swap)\\s+(?:the\\s+)?${kw}\\s+image.*?(https?:\\/\\/\\S+)`,'i');
+    if((m=c.match(re))){ if(!needStruct()) return rawFail(); state.images[key]=fixUrl(m[1]); return 'Updated the '+kw+' image.'; }
+  }
+  // --- links ---
+  if((m=c.match(/(?:register|button|rsvp|sign[\s-]*up)\s+link.*?(https?:\/\/\S+)/i))){ if(!needStruct())return rawFail(); state.links.register=fixUrl(m[1]); return 'Register/button link updated.'; }
+  if((m=c.match(/website\s+link.*?(https?:\/\/\S+)/i))){ if(!needStruct())return rawFail(); state.links.website=fixUrl(m[1]); return 'Website link updated.'; }
+  if((m=c.match(/linkedin\s+link.*?(https?:\/\/\S+)/i))){ if(!needStruct())return rawFail(); state.links.linkedin=fixUrl(m[1]); return 'LinkedIn link updated.'; }
+
+  // --- find / replace text ---
+  if((m=c.match(/replace\s+["'“”](.+?)["'“”]\s+with\s+["'“”](.+?)["'“”]/i)) ||
+     (m=c.match(/replace\s+(.+?)\s+with\s+(.+)/i))){
+    const from=m[1], to=m[2];
+    const html=currentHTML(); const re=new RegExp(from.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'g');
+    if(!re.test(html)) return `Couldn't find "${from}" in the email.`;
+    if(customHTML!=null){ customHTML=customHTML.replace(re,to); }
+    else { customHTML=renderEmail(state).replace(re,to); } // shift to custom so edit sticks
+    return `Replaced "${from}" with "${to}".`;
+  }
+
+  // --- widths ---
+  if((m=low.match(/button\s+(?:width|size)\D*(\d{2,4})/))){ if(!needStruct())return rawFail(); state.style.buttonWidth=+m[1]; return 'Button width set to '+m[1]+'px.'; }
+  if((m=low.match(/(?:email|template)\s+width\D*(\d{3,4})/))){ if(!needStruct())return rawFail(); state.style.width=+m[1]; return 'Email width set to '+m[1]+'px.'; }
+
+  // --- colours ---
+  if((m=c.match(/(?:background|bg)\s+(?:colou?r)?\s*(?:to\s+)?(#[0-9a-f]{3,6}|[a-z]+)/i))){ if(!needStruct())return rawFail(); state.style.bg=m[1]; return 'Background colour updated.'; }
+  if((m=c.match(/text\s+colou?r\s*(?:to\s+)?(#[0-9a-f]{3,6}|[a-z]+)/i))){ if(!needStruct())return rawFail(); state.style.text=m[1]; return 'Text colour updated.'; }
+  if((m=c.match(/(?:bullet|accent)\s+colou?r\s*(?:to\s+)?(#[0-9a-f]{3,6}|[a-z]+)/i))){ if(!needStruct())return rawFail(); state.style.bulletColor=m[1]; return 'Accent colour updated.'; }
+
+  // --- greeting ---
+  if((m=c.match(/(?:greeting|salutation)\s+(?:to\s+)?(.+)/i))){ if(!needStruct())return rawFail(); state.greeting=m[1].trim(); return 'Greeting updated.'; }
+  if((m=c.match(/(?:change|set)\s+(?:the\s+)?name\s+to\s+(.+)/i))){
+    const html=currentHTML().replace(/\bName\b/g,m[1].trim());
+    customHTML=html; return 'Replaced the Name placeholder.';
+  }
+
+  return null; // not handled by rules
+}
+function rawFail(){ return "That edit needs the structured model, but the email is currently in custom-HTML mode (an AI edit was applied). Regenerate to reset, or ask me as a plain-text replace."; }
+
+async function callClaude(instruction){
+  const key=el('apiKey').value.trim();
+  if(!key) return {ok:false,msg:"I couldn't handle that with built-in rules, and no API key is set. Add an Anthropic key above for free-form edits, or try a simpler command."};
+  const html=currentHTML();
+  const sys="You are an email-HTML editor. You receive the full HTML of a marketing email and one instruction. Return ONLY the complete, modified, email-client-safe HTML document (tables + inline styles). No markdown, no code fences, no commentary.";
+  const user=`Instruction: ${instruction}\n\nCurrent email HTML:\n${html}`;
+  try{
+    const r=await fetch("https://api.anthropic.com/v1/messages",{
+      method:"POST",
+      headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+      body:JSON.stringify({model:"claude-opus-4-8",max_tokens:8000,system:sys,messages:[{role:"user",content:user}]})
+    });
+    if(!r.ok){ const t=await r.text(); return {ok:false,msg:"API error "+r.status+": "+t.slice(0,200)}; }
+    const j=await r.json();
+    let out=(j.content&&j.content[0]&&j.content[0].text||"").trim();
+    out=out.replace(/^```[a-z]*\n?/i,'').replace(/```$/,'').trim();
+    if(!/<\s*(table|body|html)/i.test(out)) return {ok:false,msg:"The model didn't return HTML. Try rephrasing."};
+    return {ok:true,html:out};
+  }catch(e){ return {ok:false,msg:"Request failed: "+e.message+" (the Anthropic API may block browser calls on your network)."}; }
+}
+
+async function handleChat(){
+  const inp=el('chatInput'); const cmd=inp.value.trim(); if(!cmd) return;
+  if(!state && customHTML==null){ addMsg('bot','Generate an email first (tab 1), then I can edit it.'); return; }
+  addMsg('user',cmd); inp.value='';
+  // try rules first
+  const ruleRes=applyRule(cmd);
+  if(ruleRes){ refresh(); addMsg('bot',ruleRes); return; }
+  // fallback to API
+  addMsg('sys','thinking…');
+  const res=await callClaude(cmd);
+  el('chatlog').lastChild.remove();
+  if(res.ok){ customHTML=res.html; refresh(); addMsg('bot','Done — applied via AI. Preview updated.'); }
+  else addMsg('bot',res.msg);
+}
+
+/* ============================================================
+   wiring
+   ============================================================ */
+/* upload a brief file (text) OR a design image (jpg/png) */
+const filePicker=document.createElement('input'); filePicker.type='file';
+filePicker.accept='.txt,.md,.csv,.text,text/*,image/*,.jpg,.jpeg,.png,.webp,.gif';
+filePicker.style.display='none'; document.body.appendChild(filePicker);
+filePicker.onchange=()=>{
+  const f=filePicker.files[0]; filePicker.value=''; if(!f) return;
+  if(f.type.startsWith('image/')){ generateFromImage(f); return; }
+  const r=new FileReader(); r.onload=()=>{ el('rawInput').value=r.result; switchTab('input'); setStatus('Loaded '+f.name+' — click Generate.'); }; r.readAsText(f);
+};
+el('uploadFileBtn').onclick=()=>filePicker.click();
+
+/* turn an uploaded design image into emailer HTML via Claude vision */
+async function generateFromImage(file){
+  const key=el('apiKey').value.trim();
+  if(!key){
+    switchTab('chat');
+    addMsg('bot','You uploaded an image ('+file.name+'). To build an email from a design image I need an Anthropic API key — paste it in the box above and upload again. (For a text brief, no key is needed.)');
+    setStatus('Image upload needs an API key.');
+    return;
+  }
+  setStatus('Reading image with AI…');
+  const dataURL=await new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.readAsDataURL(file); });
+  const b64=dataURL.slice(dataURL.indexOf(',')+1);
+  const sys="You convert a screenshot/design of a marketing email into clean, email-client-safe HTML (tables + inline styles, max-width 600px). Reproduce the layout, text, colours and buttons you see. Return ONLY the complete HTML document — no markdown, no code fences, no commentary.";
+  try{
+    const r=await fetch("https://api.anthropic.com/v1/messages",{
+      method:"POST",
+      headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+      body:JSON.stringify({model:"claude-opus-4-8",max_tokens:8000,system:sys,messages:[{role:"user",content:[
+        {type:"image",source:{type:"base64",media_type:file.type,data:b64}},
+        {type:"text",text:"Recreate this email as HTML."}
+      ]}]})
+    });
+    if(!r.ok){ const t=await r.text(); setStatus('API error '+r.status); switchTab('chat'); addMsg('bot','API error '+r.status+': '+t.slice(0,200)); return; }
+    const j=await r.json();
+    let out=(j.content&&j.content[0]&&j.content[0].text||'').trim().replace(/^```[a-z]*\n?/i,'').replace(/```$/,'').trim();
+    if(!/<\s*(table|body|html)/i.test(out)){ setStatus('No HTML returned'); switchTab('chat'); addMsg('bot',"The model didn't return HTML. Try again."); return; }
+    customHTML=out; state=null; refresh('Built email from image ✓');
+    switchTab('chat');
+    if(el('chatlog').children.length===0) addMsg('bot','Email built from your image. Tell me what to change and I\'ll refine it.');
+    else addMsg('bot','Rebuilt the email from your uploaded image.');
+  }catch(e){ setStatus('Request failed'); switchTab('chat'); addMsg('bot','Request failed: '+e.message+' (your network may block browser calls to the Anthropic API).'); }
+}
+el('clearBtn').onclick=()=>{ el('rawInput').value=''; };
+el('generateBtn').onclick=()=>{
+  const txt=el('rawInput').value.trim();
+  if(!txt){ setStatus('Paste a brief first.'); return; }
+  state=parseInput(txt); customHTML=null;
+  refresh('Generated ✓  '+state.bullets.length+' bullet(s), '+Object.values(state.images).filter(Boolean).length+'/4 images.');
+  switchTab('chat');
+  if(el('chatlog').children.length===0) addMsg('bot','Email generated. Tell me what to change — e.g. “change the register link to …”, “replace \'Name\' with \'Priya\'”, “make the button 260px”.');
+};
+el('downloadBtn').onclick=()=>{
+  const blob=new Blob([currentHTML()],{type:'text/html'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='emailer-'+new Date().toISOString().slice(0,10)+'.html'; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000); setStatus('Downloaded.');
+};
+el('copyBtn').onclick=async()=>{ try{ await navigator.clipboard.writeText(currentHTML()); setStatus('HTML copied.'); }catch(e){ setStatus('Copy failed — use Download.'); } };
+el('sendChat').onclick=handleChat;
+el('chatInput').addEventListener('keydown',e=>{ if(e.key==='Enter') handleChat(); });
+
+el('segPreview').onclick=()=>{ el('preview').style.display='block'; el('codeView').style.display='none'; el('segPreview').classList.add('active'); el('segCode').classList.remove('active'); };
+el('segCode').onclick=()=>{ el('preview').style.display='none'; el('codeView').style.display='block'; el('segCode').classList.add('active'); el('segPreview').classList.remove('active'); };
+
+function switchTab(name){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
+  document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('active',p.dataset.pane===name));
+}
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>switchTab(t.dataset.tab));
+
+/* draggable divider to resize the input/preview panels */
+(function(){
+  const div=el('divider'), left=document.querySelector('.left'), main=document.querySelector('.main');
+  let dragging=false;
+  div.addEventListener('mousedown',e=>{ dragging=true; div.classList.add('drag'); document.body.style.userSelect='none'; e.preventDefault(); });
+  window.addEventListener('mousemove',e=>{ if(!dragging) return;
+    const r=main.getBoundingClientRect(); let w=e.clientX-r.left;
+    w=Math.max(300,Math.min(w,r.width-320)); left.style.width=w+'px'; left.style.maxWidth='none';
+  });
+  window.addEventListener('mouseup',()=>{ if(dragging){ dragging=false; div.classList.remove('drag'); document.body.style.userSelect=''; } });
+})();
+
+/* api key persistence (local only) */
+try{ const k=localStorage.getItem('emailerai_key'); if(k){ el('apiKey').value=k; el('keyDot').classList.add('on'); } }catch(e){}
+el('saveKey').onclick=()=>{ try{ localStorage.setItem('emailerai_key',el('apiKey').value.trim()); }catch(e){} el('keyDot').classList.toggle('on',!!el('apiKey').value.trim()); setStatus('API key saved in this browser.'); };
+el('apiKey').addEventListener('input',()=>el('keyDot').classList.toggle('on',!!el('apiKey').value.trim()));
+
+refresh();
+</script>
+</body>
+</html>
