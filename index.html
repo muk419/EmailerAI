@@ -166,7 +166,7 @@
           <input type="text" id="chatInput" placeholder="e.g. change the register link to https://… / replace 'Name' with 'Priya' / make the button 260px">
           <button class="btn primary" id="sendChat">Send</button>
         </div>
-        <div class="hint">Works offline for common edits (links, images, text replace, colours, widths). With an API key, type any instruction in plain English.</div>
+        <div class="hint">Common edits (links, images, text replace, colours, widths) work with no key. Free-form plain-English edits use AI: on the deployed site they work automatically when <code>ANTHROPIC_API_KEY</code> is set in Vercel; opened as a local file, paste a key above.</div>
       </div>
     </div>
 
@@ -425,25 +425,49 @@ function applyRule(cmd){
 }
 function rawFail(){ return "That edit needs the structured model, but the email is currently in custom-HTML mode (an AI edit was applied). Regenerate to reset, or ask me as a plain-text replace."; }
 
-async function callClaude(instruction){
+/* Unified call: try the server proxy (/api/edit) first — works with no key
+   pasted when the site is deployed with ANTHROPIC_API_KEY set. If there is no
+   server (opened as a local file) or it isn't configured, fall back to the
+   key pasted in the box. Returns {ok, json} or {ok:false, msg}. */
+async function anthropicCall({system, messages, max_tokens}){
+  let serverErr=null;
+  try{
+    const r=await fetch('/api/edit',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({system,messages,max_tokens:max_tokens||8000})});
+    if(r.ok) return {ok:true,json:await r.json()};
+    // server exists but errored (e.g. key not configured) — note it, then try pasted key
+    serverErr='Server '+r.status+': '+(await r.text()).slice(0,160);
+  }catch(e){ /* no server reachable (local file / offline) — fall through */ }
+
   const key=el('apiKey').value.trim();
-  if(!key) return {ok:false,msg:"I couldn't handle that with built-in rules, and no API key is set. Add an Anthropic key above for free-form edits, or try a simpler command."};
+  if(key){
+    try{
+      const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
+        headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+        body:JSON.stringify({model:"claude-opus-4-8",max_tokens:max_tokens||8000,system,messages})});
+      if(!r.ok){ const t=await r.text(); return {ok:false,msg:"API error "+r.status+": "+t.slice(0,200)}; }
+      return {ok:true,json:await r.json()};
+    }catch(e){ return {ok:false,msg:"Request failed: "+e.message+" (your network may block browser calls to the Anthropic API)."}; }
+  }
+  return {ok:false,msg: serverErr
+    ? serverErr+" — set ANTHROPIC_API_KEY in your Vercel project settings, or paste a key above."
+    : "I couldn't handle that with built-in rules. Either deploy with ANTHROPIC_API_KEY set (so no key is needed here), or paste an Anthropic key in the box above."};
+}
+
+function extractHTML(json){
+  let out=(json.content&&json.content[0]&&json.content[0].text||"").trim();
+  return out.replace(/^```[a-z]*\n?/i,'').replace(/```$/,'').trim();
+}
+
+async function callClaude(instruction){
   const html=currentHTML();
   const sys="You are an email-HTML editor. You receive the full HTML of a marketing email and one instruction. Return ONLY the complete, modified, email-client-safe HTML document (tables + inline styles). No markdown, no code fences, no commentary.";
   const user=`Instruction: ${instruction}\n\nCurrent email HTML:\n${html}`;
-  try{
-    const r=await fetch("https://api.anthropic.com/v1/messages",{
-      method:"POST",
-      headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-      body:JSON.stringify({model:"claude-opus-4-8",max_tokens:8000,system:sys,messages:[{role:"user",content:user}]})
-    });
-    if(!r.ok){ const t=await r.text(); return {ok:false,msg:"API error "+r.status+": "+t.slice(0,200)}; }
-    const j=await r.json();
-    let out=(j.content&&j.content[0]&&j.content[0].text||"").trim();
-    out=out.replace(/^```[a-z]*\n?/i,'').replace(/```$/,'').trim();
-    if(!/<\s*(table|body|html)/i.test(out)) return {ok:false,msg:"The model didn't return HTML. Try rephrasing."};
-    return {ok:true,html:out};
-  }catch(e){ return {ok:false,msg:"Request failed: "+e.message+" (the Anthropic API may block browser calls on your network)."}; }
+  const res=await anthropicCall({system:sys,messages:[{role:"user",content:user}]});
+  if(!res.ok) return res;
+  const out=extractHTML(res.json);
+  if(!/<\s*(table|body|html)/i.test(out)) return {ok:false,msg:"The model didn't return HTML. Try rephrasing."};
+  return {ok:true,html:out};
 }
 
 async function handleChat(){
@@ -477,35 +501,23 @@ el('uploadFileBtn').onclick=()=>filePicker.click();
 
 /* turn an uploaded design image into emailer HTML via Claude vision */
 async function generateFromImage(file){
-  const key=el('apiKey').value.trim();
-  if(!key){
-    switchTab('chat');
-    addMsg('bot','You uploaded an image ('+file.name+'). To build an email from a design image I need an Anthropic API key — paste it in the box above and upload again. (For a text brief, no key is needed.)');
-    setStatus('Image upload needs an API key.');
-    return;
-  }
+  switchTab('chat');
   setStatus('Reading image with AI…');
+  addMsg('sys','reading image…');
   const dataURL=await new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.readAsDataURL(file); });
   const b64=dataURL.slice(dataURL.indexOf(',')+1);
   const sys="You convert a screenshot/design of a marketing email into clean, email-client-safe HTML (tables + inline styles, max-width 600px). Reproduce the layout, text, colours and buttons you see. Return ONLY the complete HTML document — no markdown, no code fences, no commentary.";
-  try{
-    const r=await fetch("https://api.anthropic.com/v1/messages",{
-      method:"POST",
-      headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-      body:JSON.stringify({model:"claude-opus-4-8",max_tokens:8000,system:sys,messages:[{role:"user",content:[
-        {type:"image",source:{type:"base64",media_type:file.type,data:b64}},
-        {type:"text",text:"Recreate this email as HTML."}
-      ]}]})
-    });
-    if(!r.ok){ const t=await r.text(); setStatus('API error '+r.status); switchTab('chat'); addMsg('bot','API error '+r.status+': '+t.slice(0,200)); return; }
-    const j=await r.json();
-    let out=(j.content&&j.content[0]&&j.content[0].text||'').trim().replace(/^```[a-z]*\n?/i,'').replace(/```$/,'').trim();
-    if(!/<\s*(table|body|html)/i.test(out)){ setStatus('No HTML returned'); switchTab('chat'); addMsg('bot',"The model didn't return HTML. Try again."); return; }
-    customHTML=out; state=null; refresh('Built email from image ✓');
-    switchTab('chat');
-    if(el('chatlog').children.length===0) addMsg('bot','Email built from your image. Tell me what to change and I\'ll refine it.');
-    else addMsg('bot','Rebuilt the email from your uploaded image.');
-  }catch(e){ setStatus('Request failed'); switchTab('chat'); addMsg('bot','Request failed: '+e.message+' (your network may block browser calls to the Anthropic API).'); }
+  const res=await anthropicCall({system:sys,messages:[{role:"user",content:[
+    {type:"image",source:{type:"base64",media_type:file.type,data:b64}},
+    {type:"text",text:"Recreate this email as HTML."}
+  ]}]});
+  const log=el('chatlog'); if(log.lastChild&&log.lastChild.classList.contains('sys')) log.lastChild.remove();
+  if(!res.ok){ setStatus('Image build failed'); addMsg('bot',res.msg); return; }
+  const out=extractHTML(res.json);
+  if(!/<\s*(table|body|html)/i.test(out)){ setStatus('No HTML returned'); addMsg('bot',"The model didn't return HTML. Try again."); return; }
+  customHTML=out; state=null; refresh('Built email from image ✓');
+  if(el('chatlog').children.length===0) addMsg('bot','Email built from your image. Tell me what to change and I\'ll refine it.');
+  else addMsg('bot','Rebuilt the email from your uploaded image.');
 }
 el('clearBtn').onclick=()=>{ el('rawInput').value=''; };
 el('generateBtn').onclick=()=>{
